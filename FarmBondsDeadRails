@@ -1,4 +1,4 @@
--- ┌─────────────────────────────────────────────────────────────────────────
+-- ┌───────────────────────────────────────────────────────────────────────────
 -- │                              MADE BY                                  │
 -- │                           cyberseall                                  │
 -- │                       aka Terry Davis                                 │
@@ -173,7 +173,7 @@ Corner.Parent = Frame
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0.2, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "Fluxus Farm"  -- Новая надпись
+Title.Text = "Bond Farmer"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 14
