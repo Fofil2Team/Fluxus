@@ -1,0 +1,272 @@
+-- ┌───────────────────────────────────────────────────────────────────────────
+-- │                              MADE BY                                  │
+-- │                           cyberseall                                  │
+-- │                       aka Terry Davis                                 │
+-- ├───────────────────────────────────────────────────────────────────────────
+-- │ Discord: if (!bitches) exit(1); or cyberseall                           │
+-- │ Invite: https://discord.gg/KQMzeSpNbY                                   │
+-- ├───────────────────────────────────────────────────────────────────────────
+-- │ Features:                                                                │
+-- │   • Automatic bond scanning & collection                                 │
+-- │   • Configurable scan resolution & timeouts                              │
+-- │   • Teleport queue integration                                           │
+-- │   • Added GUI with animated appearance and bond counter                  │
+-- ├───────────────────────────────────────────────────────────────────────────
+-- │ Release Notice:                                                          │
+-- │   This source code is released as-is because I'm tired of constantly     │
+-- │   hunting for universal fixes or methods. Feel free to use and adapt     │
+-- │   this code, but please credit me for this work.                         │
+-- ├───────────────────────────────────────────────────────────────────────────
+-- │ Warning: I will hunt down any skids who just copy-paste this code and    │
+-- │          slap a UI on it without giving credit.                          │
+-- └───────────────────────────────────────────────────────────────────────────
+
+pcall(function()
+    workspace.StreamingEnabled = false
+    workspace.SimulationRadius = math.huge
+end)
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
+local TweenService      = game:GetService("TweenService")
+
+local player   = Players.LocalPlayer
+local char     = player.Character or player.CharacterAdded:Wait()
+local hrp      = char:WaitForChild("HumanoidRootPart")
+local humanoid = char:WaitForChild("Humanoid")
+
+local networkFolder    = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Network")
+local RemotePromiseMod = require(networkFolder:WaitForChild("RemotePromise"))
+local ActivatePromise  = RemotePromiseMod.new("ActivateObject")
+
+local remotesRoot       = ReplicatedStorage:WaitForChild("Remotes")
+local EndDecisionRemote = remotesRoot:WaitForChild("EndDecision")
+
+local queue_on_tp = (syn and syn.queue_on_teleport)
+    or queue_on_teleport
+    or (fluxus and fluxus.queue_on_teleport)
+
+local bondData = {}
+local seenKeys = {}
+local farming = false
+local bondCount = 0 -- Счётчик собранных бондов
+
+local function recordBonds()
+    local runtime = Workspace:WaitForChild("RuntimeItems")
+    for _, item in ipairs(runtime:GetChildren()) do
+        if item.Name:match("Bond") then
+            local part = item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")
+            if part then
+                local key = ("%.1f_%.1f_%.1f"):format(
+                    part.Position.X, part.Position.Y, part.Position.Z
+                )
+                if not seenKeys[key] then
+                    seenKeys[key] = true
+                    table.insert(bondData, { item = item, pos = part.Position, key = key })
+                end
+            end
+        end
+    end
+end
+
+local function farmBonds(bondCounterLabel)
+    bondCount = 0 -- Сбрасываем счётчик перед началом фарма
+    bondCounterLabel.Text = "Bonds Collected: 0"
+
+    print("=== Starting map scan ===")
+    local scanTarget = CFrame.new(-424.448975, 26.055481, -49040.6562, -1,0,0, 0,1,0, 0,0,-1)
+    local scanSteps = 50
+    for i = 1, scanSteps do
+        hrp.CFrame = hrp.CFrame:Lerp(scanTarget, i/scanSteps)
+        task.wait(0.3)
+        recordBonds()
+        task.wait(0.1)
+    end
+    hrp.CFrame = scanTarget
+    task.wait(0.3)
+    recordBonds()
+
+    print(("→ %d Bonds found"):format(#bondData))
+    if #bondData == 0 then
+        warn("No Bonds found – check Runtime Items shit")
+        return
+    end
+
+    local chair = Workspace:WaitForChild("RuntimeItems"):FindFirstChild("Chair")
+    assert(chair and chair:FindFirstChild("Seat"), "Chair.Seat not found")
+    local seat = chair.Seat
+
+    seat:Sit(humanoid)
+    task.wait(0.2)
+    assert(humanoid.SeatPart == seat, "Seat error")
+
+    for idx, entry in ipairs(bondData) do
+        if not farming then break end
+        print(("--- Bond %d/%d: %s ---"):format(idx, #bondData, entry.key))
+
+        local targetCFrame = CFrame.new(entry.pos) * CFrame.new(0, 2, 0)
+        seat:PivotTo(targetCFrame)
+        task.wait(0.05)
+
+        if humanoid.SeatPart ~= seat then
+            seat:Sit(humanoid)
+            task.wait(0.05)
+        end
+
+        ActivatePromise:InvokeServer(entry.item)
+        task.wait(0.3) -- Уменьшено с 1 до 0.3
+
+        if not entry.item.Parent then
+            print("Bond collected")
+            bondCount = bondCount + 1
+            bondCounterLabel.Text = "Bonds Collected: " .. bondCount
+        else
+            warn("Increase timeout when not collecting")
+            task.wait(0.2) -- Уменьшено с 0.5 до 0.2
+            if not entry.item.Parent then
+                print("Bond collected after extra wait")
+                bondCount = bondCount + 1
+                bondCounterLabel.Text = "Bonds Collected: " .. bondCount
+            end
+        end
+    end
+
+    humanoid:TakeDamage(999999)
+    EndDecisionRemote:FireServer(false)
+
+    if queue_on_tp then
+        queue_on_tp('PUT YOUR SHIT HERE')
+    end
+
+    print("=== Script finished ===")
+end
+
+-- Создание GUI в PlayerGui с анимацией
+local PlayerGui = player:WaitForChild("PlayerGui")
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BondFarmerGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 50, 0, 50) -- Начальный маленький размер
+Frame.Position = UDim2.new(0.35, 0, 0.35, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true
+Frame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0.2, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Bond Farmer"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.Parent = Frame
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0.8, 0, 0.3, 0)
+ToggleButton.Position = UDim2.new(0.1, 0, 0.3, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+ToggleButton.Text = "Start Farming"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.Gotham
+ToggleButton.TextSize = 14
+ToggleButton.Parent = Frame
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(0, 8)
+ButtonCorner.Parent = ToggleButton
+
+-- Счётчик бондов
+local BondCounterLabel = Instance.new("TextLabel")
+BondCounterLabel.Size = UDim2.new(0.8, 0, 0.15, 0)
+BondCounterLabel.Position = UDim2.new(0.1, 0, 0.65, 0)
+BondCounterLabel.BackgroundTransparency = 1
+BondCounterLabel.Text = "Bonds Collected: 0"
+BondCounterLabel.TextColor3 = Color3.fromRGB(0, 255, 127)
+BondCounterLabel.Font = Enum.Font.Gotham
+BondCounterLabel.TextSize = 12
+BondCounterLabel.Parent = Frame
+
+-- Надпись с авторством
+local CreditsLabel = Instance.new("TextLabel")
+CreditsLabel.Size = UDim2.new(1, 0, 0.15, 0)
+CreditsLabel.Position = UDim2.new(0, 0, 0.85, 0)
+CreditsLabel.BackgroundTransparency = 1
+CreditsLabel.Text = "Gui by CrownTeam\nSourceCode by cyberseall"
+CreditsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+CreditsLabel.Font = Enum.Font.Gotham
+CreditsLabel.TextSize = 10
+CreditsLabel.TextScaled = false
+CreditsLabel.TextWrapped = true
+CreditsLabel.Parent = Frame
+
+-- Анимация появления
+local TweenInfoIn = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local GoalIn = {Size = UDim2.new(0.25, 0, 0.3, 0)}
+local tweenIn = TweenService:Create(Frame, TweenInfoIn, GoalIn)
+tweenIn:Play()
+
+-- Уведомление в PlayerGui
+local Notification = Instance.new("ScreenGui")
+Notification.Name = "FarmNotification"
+Notification.Parent = PlayerGui
+
+local NotifFrame = Instance.new("Frame")
+NotifFrame.Size = UDim2.new(0.3, 0, 0.1, 0)
+NotifFrame.Position = UDim2.new(-0.3, 0, 0.02, 0)
+NotifFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+NotifFrame.BorderSizePixel = 0
+NotifFrame.Parent = Notification
+
+local NotifCorner = Instance.new("UICorner")
+NotifCorner.CornerRadius = UDim.new(0, 12)
+NotifCorner.Parent = NotifFrame
+
+local NotifText = Instance.new("TextLabel")
+NotifText.Size = UDim2.new(1, 0, 1, 0)
+NotifText.BackgroundTransparency = 1
+NotifText.Text = "Bond Farmer\nLoaded successfully!"
+NotifText.TextColor3 = Color3.fromRGB(0, 255, 127)
+NotifText.Font = Enum.Font.GothamBold
+NotifText.TextScaled = true
+NotifText.Parent = NotifFrame
+
+local TweenInfoNotifIn = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local GoalNotifIn = {Position = UDim2.new(0, 0, 0.02, 0)}
+local tweenNotifIn = TweenService:Create(NotifFrame, TweenInfoNotifIn, GoalNotifIn)
+tweenNotifIn:Play()
+
+task.delay(6, function()
+    local TweenInfoOut = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+    local GoalOut = {Position = UDim2.new(-0.3, 0, 0.02, 0)}
+    local tweenOut = TweenService:Create(NotifFrame, TweenInfoOut, GoalOut)
+    tweenOut:Play()
+    tweenOut.Completed:Connect(function()
+        Notification:Destroy()
+    end)
+end)
+
+-- Обработчик кнопки
+ToggleButton.MouseButton1Click:Connect(function()
+    if not farming then
+        farming = true
+        ToggleButton.Text = "Stop Farming"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        spawn(function()
+            farmBonds(BondCounterLabel)
+        end)
+    else
+        farming = false
+        ToggleButton.Text = "Start Farming"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    end
+end)
