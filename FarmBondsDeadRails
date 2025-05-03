@@ -11,6 +11,7 @@
 -- │   • Configurable scan resolution & timeouts                              │
 -- │   • Teleport queue integration                                           │
 -- │   • Added GUI with animated appearance and bond counter                  │
+-- │   • Retry logic for bond collection                                      │
 -- ├───────────────────────────────────────────────────────────────────────────
 -- │ Release Notice:                                                          │
 -- │   This source code is released as-is because I'm tired of constantly     │
@@ -114,21 +115,28 @@ local function farmBonds(bondCounterLabel)
             task.wait(0.05)
         end
 
-        ActivatePromise:InvokeServer(entry.item)
-        task.wait(0.3) -- Уменьшено с 1 до 0.3
+        local attempts = 0
+        local maxAttempts = 3
+        local collected = false
 
-        if not entry.item.Parent then
-            print("Bond collected")
-            bondCount = bondCount + 1
-            bondCounterLabel.Text = "Bonds Collected: " .. bondCount
-        else
-            warn("Increase timeout when not collecting")
-            task.wait(0.2) -- Уменьшено с 0.5 до 0.2
+        while attempts < maxAttempts and not collected do
+            attempts = attempts + 1
+            print(("Attempt %d for bond %s"):format(attempts, entry.key))
+            ActivatePromise:InvokeServer(entry.item)
+            task.wait(0.3)
+
             if not entry.item.Parent then
-                print("Bond collected after extra wait")
+                print("Bond collected on attempt " .. attempts)
+                collected = true
                 bondCount = bondCount + 1
                 bondCounterLabel.Text = "Bonds Collected: " .. bondCount
+            else
+                warn("Bond not collected on attempt " .. attempts)
             end
+        end
+
+        if not collected then
+            warn("Failed to collect bond after " .. maxAttempts .. " attempts")
         end
     end
 
@@ -222,7 +230,7 @@ Notification.Parent = PlayerGui
 
 local NotifFrame = Instance.new("Frame")
 NotifFrame.Size = UDim2.new(0.3, 0, 0.1, 0)
-NotifFrame.Position = UDim2.new(-0.3, 0, 0.02, 0)
+NotifFrame.Position = UDim2.new(1.3, 0, 0.4, 0) -- Начинаем справа за экраном
 NotifFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 NotifFrame.BorderSizePixel = 0
 NotifFrame.Parent = Notification
@@ -241,13 +249,13 @@ NotifText.TextScaled = true
 NotifText.Parent = NotifFrame
 
 local TweenInfoNotifIn = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local GoalNotifIn = {Position = UDim2.new(0, 0, 0.02, 0)}
+local GoalNotifIn = {Position = UDim2.new(0.7, 0, 0.4, 0)} -- Конечная позиция справа посередине
 local tweenNotifIn = TweenService:Create(NotifFrame, TweenInfoNotifIn, GoalNotifIn)
 tweenNotifIn:Play()
 
 task.delay(6, function()
     local TweenInfoOut = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-    local GoalOut = {Position = UDim2.new(-0.3, 0, 0.02, 0)}
+    local GoalOut = {Position = UDim2.new(1.3, 0, 0.4, 0)} -- Уезжает вправо за экран
     local tweenOut = TweenService:Create(NotifFrame, TweenInfoOut, GoalOut)
     tweenOut:Play()
     tweenOut.Completed:Connect(function()
